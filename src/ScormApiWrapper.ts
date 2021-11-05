@@ -124,10 +124,10 @@ namespace Sheleski {
                 let errorDiagnostic: string | null = null;
 
                 if (isSuccessful) {
-                    if (name == this.getCompletionStatusParameter()) {
+                    if (name == this.completionStatusParameter) {
                         this.completionStatus = val;
                     }
-                    else if (name == this.getExitParameter()) {
+                    else if (name == this.exitParameter) {
                         this.exitStatus = val;
                     }
                 }
@@ -146,7 +146,7 @@ namespace Sheleski {
             }
 
             set(name: string, value: string): SetValueResult {
-                
+
                 let errorString: string | null = null;
                 let errorDiagnostic: string | null = null;
                 let errorCode = 0;
@@ -154,7 +154,7 @@ namespace Sheleski {
                 let success = this.setRaw(name, value);
 
                 if (success) {
-                    if (name == this.getCompletionStatusParameter()) {
+                    if (name == this.completionStatusParameter) {
                         this.completionStatus = value;
                     }
                 }
@@ -189,12 +189,12 @@ namespace Sheleski {
 
                         if (this.setCompletionStatusOnInitialize) {
 
-                            let completionStatusParameter = this.getCompletionStatusParameter();
+                            let completionStatusParameter = this.completionStatusParameter;
 
                             let completionStatus = this.getRaw(completionStatusParameter);
 
-                            if (completionStatus == this.getNotAttemptedCompletionStatus()) {
-                                if (this.setRaw(completionStatusParameter, this.getIncompleteCompletionStatus())) {
+                            if (completionStatus == this.notAttemptedCompletionStatus) {
+                                if (this.setRaw(completionStatusParameter, this.incompleteCompletionStatus)) {
                                     this.commit();
 
                                     return true;
@@ -219,11 +219,11 @@ namespace Sheleski {
                 let success: boolean = false;
 
                 if (this.setExitOnTerminate && !this.exitStatus) {
-                    if (this.completionStatus !== this.getCompletedCompletionStatus()) {
-                        success = this.onSetRaw(this.getExitParameter(), this.getSuspendExitStatus());
+                    if (this.completionStatus !== this.completedCompletionStatus) {
+                        success = this.onSetRaw(this.exitParameter, this.suspendExitStatus);
                     }
                     else {
-                        success = this.onSetRaw(this.getExitParameter(), this.getLogoutExitStatus());
+                        success = this.onSetRaw(this.exitParameter, this.logoutExitStatus);
                     }
                 }
 
@@ -240,11 +240,11 @@ namespace Sheleski {
                 return success;
             }
             commit(): boolean {
-                if (this.connectionStatus == ConnectionStatus.connected){
+                if (this.connectionStatus == ConnectionStatus.connected) {
                     return this.onCommit();
                 }
 
-                return false;                
+                return false;
             }
             getLastError(): number {
                 return this.onGetLastError();
@@ -256,13 +256,13 @@ namespace Sheleski {
                 return this.onGetDiagnostic();
             }
 
-            protected abstract getExitParameter(): string;
-            protected abstract getCompletedCompletionStatus(): string;
-            protected abstract getIncompleteCompletionStatus(): string;
-            protected abstract getSuspendExitStatus(): string;
-            protected abstract getLogoutExitStatus(): string;
-            protected abstract getNotAttemptedCompletionStatus(): string;
-            protected abstract getCompletionStatusParameter(): string;
+            protected abstract readonly exitParameter: string;
+            protected abstract readonly completedCompletionStatus: string;
+            protected abstract readonly incompleteCompletionStatus: string;
+            protected abstract readonly suspendExitStatus: string;
+            protected abstract readonly logoutExitStatus: string;
+            protected abstract readonly notAttemptedCompletionStatus: string;
+            protected abstract readonly completionStatusParameter: string;
 
             protected abstract onGetRaw(name: string): string;
             protected abstract onSetRaw(name: string, value: string): boolean;
@@ -272,7 +272,6 @@ namespace Sheleski {
             protected abstract onInitialize(): boolean;
             protected abstract onTerminate(): boolean;
             protected abstract onCommit(): boolean;
-
             protected abstract onCommitBeforeTerminate(): boolean;
 
             abstract getVersion(): ScormApiVersion;
@@ -281,7 +280,13 @@ namespace Sheleski {
 
         class ScormApiWrapper1p2 extends ScormApiWrapperBase {
 
-
+            protected readonly exitParameter = "cmi.core.exit";
+            protected readonly completedCompletionStatus = "passed";
+            protected readonly suspendExitStatus = "suspend";
+            protected readonly logoutExitStatus = "logout";
+            protected readonly incompleteCompletionStatus =  "incomplete";
+            protected readonly notAttemptedCompletionStatus =  "not attempted";
+            protected readonly completionStatusParameter =  "cmi.core.lesson_status";
 
             private _api: IScormEngine1p2;
 
@@ -320,21 +325,24 @@ namespace Sheleski {
 
 
 
-            protected getExitParameter = () => "cmi.core.exit";
-            protected getCompletedCompletionStatus = () => "passed";
-            protected getSuspendExitStatus = () => "suspend";
-            protected getLogoutExitStatus = () => "logout";
+            
+
             protected onCommitBeforeTerminate(): boolean {
                 return this.onCommit();
             }
 
-            protected getIncompleteCompletionStatus = () => "incomplete";
-            protected getNotAttemptedCompletionStatus = () => "not attempted";
-            protected getCompletionStatusParameter = () => "cmi.core.lesson_status";
-
         }
 
         class ScormApiWrapper2004 extends ScormApiWrapperBase {
+
+            protected readonly exitParameter = "cmi.exit";
+            protected readonly completedCompletionStatus ="completed";
+            protected readonly suspendExitStatus = "suspend"
+            protected readonly logoutExitStatus =  "normal";
+            protected readonly incompleteCompletionStatus =  "incomplete";
+            protected readonly notAttemptedCompletionStatus = "unknown";
+            protected readonly completionStatusParameter =  "cmi.completion_status";
+
             private _api: IScormEngine2004;
 
             constructor(api: IScormEngine2004) {
@@ -371,18 +379,13 @@ namespace Sheleski {
                 return ScormApiVersion.v2004;
             }
 
-            protected getExitParameter = () => "cmi.exit";
-            protected getCompletedCompletionStatus = () => "completed";
-            protected getSuspendExitStatus = () => "suspend"
-            protected getLogoutExitStatus = () => "normal";
+            
             protected onCommitBeforeTerminate(): boolean {
                 //not required for 2004 where an implicit commit is applied during the Terminate
                 return true;
             }
 
-            protected getIncompleteCompletionStatus = () => "incomplete";
-            protected getNotAttemptedCompletionStatus = () => "unknown";
-            protected getCompletionStatusParameter = () => "cmi.completion_status";
+            
         }
 
 

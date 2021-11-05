@@ -75,10 +75,10 @@ var Sheleski;
                 var errorString = null;
                 var errorDiagnostic = null;
                 if (isSuccessful) {
-                    if (name == this.getCompletionStatusParameter()) {
+                    if (name == this.completionStatusParameter) {
                         this.completionStatus = val;
                     }
-                    else if (name == this.getExitParameter()) {
+                    else if (name == this.exitParameter) {
                         this.exitStatus = val;
                     }
                 }
@@ -100,7 +100,7 @@ var Sheleski;
                 var errorCode = 0;
                 var success = this.setRaw(name, value);
                 if (success) {
-                    if (name == this.getCompletionStatusParameter()) {
+                    if (name == this.completionStatusParameter) {
                         this.completionStatus = value;
                     }
                 }
@@ -131,10 +131,10 @@ var Sheleski;
                     if (this.onInitialize()) {
                         this.connectionStatus = ConnectionStatus.connected;
                         if (this.setCompletionStatusOnInitialize) {
-                            var completionStatusParameter = this.getCompletionStatusParameter();
+                            var completionStatusParameter = this.completionStatusParameter;
                             var completionStatus = this.getRaw(completionStatusParameter);
-                            if (completionStatus == this.getNotAttemptedCompletionStatus()) {
-                                if (this.setRaw(completionStatusParameter, this.getIncompleteCompletionStatus())) {
+                            if (completionStatus == this.notAttemptedCompletionStatus) {
+                                if (this.setRaw(completionStatusParameter, this.incompleteCompletionStatus)) {
                                     this.commit();
                                     return true;
                                 }
@@ -154,11 +154,11 @@ var Sheleski;
                 }
                 var success = false;
                 if (this.setExitOnTerminate && !this.exitStatus) {
-                    if (this.completionStatus !== this.getCompletedCompletionStatus()) {
-                        success = this.onSetRaw(this.getExitParameter(), this.getSuspendExitStatus());
+                    if (this.completionStatus !== this.completedCompletionStatus) {
+                        success = this.onSetRaw(this.exitParameter, this.suspendExitStatus);
                     }
                     else {
-                        success = this.onSetRaw(this.getExitParameter(), this.getLogoutExitStatus());
+                        success = this.onSetRaw(this.exitParameter, this.logoutExitStatus);
                     }
                 }
                 if (this.commitOnTerminate) {
@@ -191,13 +191,13 @@ var Sheleski;
             __extends(ScormApiWrapper1p2, _super);
             function ScormApiWrapper1p2(api) {
                 var _this = _super.call(this) || this;
-                _this.getExitParameter = function () { return "cmi.core.exit"; };
-                _this.getCompletedCompletionStatus = function () { return "passed"; };
-                _this.getSuspendExitStatus = function () { return "suspend"; };
-                _this.getLogoutExitStatus = function () { return "logout"; };
-                _this.getIncompleteCompletionStatus = function () { return "incomplete"; };
-                _this.getNotAttemptedCompletionStatus = function () { return "not attempted"; };
-                _this.getCompletionStatusParameter = function () { return "cmi.core.lesson_status"; };
+                _this.exitParameter = "cmi.core.exit";
+                _this.completedCompletionStatus = "passed";
+                _this.suspendExitStatus = "suspend";
+                _this.logoutExitStatus = "logout";
+                _this.incompleteCompletionStatus = "incomplete";
+                _this.notAttemptedCompletionStatus = "not attempted";
+                _this.completionStatusParameter = "cmi.core.lesson_status";
                 _this._api = api;
                 return _this;
             }
@@ -240,13 +240,13 @@ var Sheleski;
             __extends(ScormApiWrapper2004, _super);
             function ScormApiWrapper2004(api) {
                 var _this = _super.call(this) || this;
-                _this.getExitParameter = function () { return "cmi.exit"; };
-                _this.getCompletedCompletionStatus = function () { return "completed"; };
-                _this.getSuspendExitStatus = function () { return "suspend"; };
-                _this.getLogoutExitStatus = function () { return "normal"; };
-                _this.getIncompleteCompletionStatus = function () { return "incomplete"; };
-                _this.getNotAttemptedCompletionStatus = function () { return "unknown"; };
-                _this.getCompletionStatusParameter = function () { return "cmi.completion_status"; };
+                _this.exitParameter = "cmi.exit";
+                _this.completedCompletionStatus = "completed";
+                _this.suspendExitStatus = "suspend";
+                _this.logoutExitStatus = "normal";
+                _this.incompleteCompletionStatus = "incomplete";
+                _this.notAttemptedCompletionStatus = "unknown";
+                _this.completionStatusParameter = "cmi.completion_status";
                 _this._api = api;
                 return _this;
             }
