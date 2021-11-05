@@ -2,7 +2,6 @@ namespace Sheleski {
     export namespace Scorm {
 
 
-
         enum ScormApiVersion {
             v1p2 = "1.2",
             v2004 = "2004"
@@ -48,38 +47,91 @@ namespace Sheleski {
         };
 
 
-        interface IScormApiWrapper {
+        export interface IScormApiWrapper {
             get(name: string): GetValueResult;
             set(name: string, value: string): SetValueResult;
 
             getRaw(name: string): string;
-            setRaw(name: string, value: string): string;
+            setRaw(name: string, value: string): boolean;
 
             initialize(): boolean;
             terminate(): void;
-            commit(): void;
+            commit(): boolean;
             getLastError(): number;
             getErrorString(): string;
             getDiagnostic(): string;
             getVersion(): ScormApiVersion;
         }
 
-        class ScormApiWrapper1p2 implements IScormApiWrapper {
+        enum ConnectionStatus {
+            connected,
+            disconnected
+        };
 
-            private _api: IScormEngine1p2;
-
-            constructor(api: IScormEngine1p2) {
-                this._api = api;
+        function getBoolean(value: any): boolean | null {
+            var t = typeof value;
+            switch (t) {
+                //typeof new String("true") === "object", so handle objects as string via fall-through.
+                //See https://github.com/pipwerks/scorm-api-wrapper/issues/3
+                case "object":
+                case "string":
+                    return (/(true|1)/i).test(value);
+                case "number":
+                    return !!value;
+                case "boolean":
+                    return value;
+                case "undefined":
+                    return null;
+                default:
+                    return false;
             }
+        }
+
+        namespace Errors {
+            export const connectionInactive = "failed: API connection is inactive."
+            export const connectionAlreadyActive = "aborted: Connection already active."
+        }
+
+
+        type errorHandler = (message: string) => void;
+
+        abstract class ScormApiWrapperBase implements IScormApiWrapper {
+
+
+            private connectionStatus: ConnectionStatus = ConnectionStatus.disconnected;
+            private completionStatus: string | null = null;
+            private exitStatus: string | null = null;
+
+            public setExitOnTerminate: boolean = true;
+            public setCompletionStatusOnInitialize: boolean = true;
+            public commitOnTerminate: boolean = true;
+
+            public errorHandler: errorHandler = (message: string) => {
+                throw message;
+            }
+
+            protected onError(message: string): void {
+                this.errorHandler(message);
+            }
+
             get(name: string): GetValueResult {
                 let val = this.getRaw(name);
                 let errorCode = this.getLastError();
 
-                let isSuccessful = errorCode == 0;
+                let isSuccessful = (val !== "" || errorCode == 0);
+
                 let errorString: string | null = null;
                 let errorDiagnostic: string | null = null;
 
                 if (isSuccessful) {
+                    if (name == this.getCompletionStatusParameter()) {
+                        this.completionStatus = val;
+                    }
+                    else if (name == this.getExitParameter()) {
+                        this.exitStatus = val;
+                    }
+                }
+                else {
                     errorString = this.getErrorString();
                     errorDiagnostic = this.getDiagnostic();
                 }
@@ -92,132 +144,245 @@ namespace Sheleski {
                     errorDiagnostic: errorDiagnostic
                 };
             }
-            set(name: string, value: string): SetValueResult {
-                let val = this.setRaw(name, value);
-                let errorCode = this.getLastError();
 
-                let isSuccessful = errorCode == 0;
+            set(name: string, value: string): SetValueResult {
+                
                 let errorString: string | null = null;
                 let errorDiagnostic: string | null = null;
+                let errorCode = 0;
 
-                if (isSuccessful) {
+                let success = this.setRaw(name, value);
+
+                if (success) {
+                    if (name == this.getCompletionStatusParameter()) {
+                        this.completionStatus = value;
+                    }
+                }
+                else {
+                    errorCode = this.getLastError();
                     errorString = this.getErrorString();
                     errorDiagnostic = this.getDiagnostic();
                 }
 
                 return {
                     errorCode: errorCode,
-                    isSuccessful: isSuccessful,
+                    isSuccessful: success,
                     errorString: errorString,
                     errorDiagnostic: errorDiagnostic
                 };
             }
+
             getRaw(name: string): string {
-                return this._api.LMSGetValue(name);
+                return this.onGetRaw(name);
             }
-            setRaw(name: string, value: string): string {
-                return this._api.LMSSetValue(name, value);
+            setRaw(name: string, value: string): boolean {
+                return getBoolean(this.onSetRaw(name, value)) ?? false;
             }
             initialize(): boolean {
-                return this._api.LMSInitialize();
+                if (this.connectionStatus == ConnectionStatus.connected) {
+                    this.onError(Errors.connectionAlreadyActive)
+                }
+                else {
+
+                    if (this.onInitialize()) {
+                        this.connectionStatus = ConnectionStatus.connected;
+
+                        if (this.setCompletionStatusOnInitialize) {
+
+                            let completionStatusParameter = this.getCompletionStatusParameter();
+
+                            let completionStatus = this.getRaw(completionStatusParameter);
+
+                            if (completionStatus == this.getNotAttemptedCompletionStatus()) {
+                                if (this.setRaw(completionStatusParameter, this.getIncompleteCompletionStatus())) {
+                                    this.commit();
+
+                                    return true;
+                                }
+                            }
+                        }
+                        else {
+                            return true;
+                        }
+                    }
+                }
+
+                return false;
             }
-            terminate(): void {
-                this._api.LMSFinish();
+            terminate(): boolean {
+
+                if (this.connectionStatus == ConnectionStatus.disconnected) {
+                    this.onError(Errors.connectionInactive);
+                    return false;
+                }
+
+                let success: boolean = false;
+
+                if (this.setExitOnTerminate && !this.exitStatus) {
+                    if (this.completionStatus !== this.getCompletedCompletionStatus()) {
+                        success = this.onSetRaw(this.getExitParameter(), this.getSuspendExitStatus());
+                    }
+                    else {
+                        success = this.onSetRaw(this.getExitParameter(), this.getLogoutExitStatus());
+                    }
+                }
+
+                if (this.commitOnTerminate) {
+                    success = this.onCommitBeforeTerminate();
+                }
+
+                success = this.onTerminate();
+
+                if (success) {
+                    this.connectionStatus = ConnectionStatus.disconnected;
+                }
+
+                return success;
             }
-            commit(): void {
-                this._api.LMSCommit("");
+            commit(): boolean {
+                if (this.connectionStatus == ConnectionStatus.connected){
+                    return this.onCommit();
+                }
+
+                return false;                
             }
             getLastError(): number {
-                return this._api.LMSGetLastError();
+                return this.onGetLastError();
             }
             getErrorString(): string {
-                return this._api.LMSGetErrorString();
+                return this.onGetErrorString();
             }
             getDiagnostic(): string {
+                return this.onGetDiagnostic();
+            }
+
+            protected abstract getExitParameter(): string;
+            protected abstract getCompletedCompletionStatus(): string;
+            protected abstract getIncompleteCompletionStatus(): string;
+            protected abstract getSuspendExitStatus(): string;
+            protected abstract getLogoutExitStatus(): string;
+            protected abstract getNotAttemptedCompletionStatus(): string;
+            protected abstract getCompletionStatusParameter(): string;
+
+            protected abstract onGetRaw(name: string): string;
+            protected abstract onSetRaw(name: string, value: string): boolean;
+            protected abstract onGetLastError(): number;
+            protected abstract onGetErrorString(): string;
+            protected abstract onGetDiagnostic(): string;
+            protected abstract onInitialize(): boolean;
+            protected abstract onTerminate(): boolean;
+            protected abstract onCommit(): boolean;
+
+            protected abstract onCommitBeforeTerminate(): boolean;
+
+            abstract getVersion(): ScormApiVersion;
+
+        }
+
+        class ScormApiWrapper1p2 extends ScormApiWrapperBase {
+
+
+
+            private _api: IScormEngine1p2;
+
+            constructor(api: IScormEngine1p2) {
+                super();
+                this._api = api;
+            }
+
+            onGetRaw(name: string): string {
+                return this._api.LMSGetValue(name);
+            }
+            onSetRaw(name: string, value: string): boolean {
+                return getBoolean(this._api.LMSSetValue(name, value)) ?? false;
+            }
+            onInitialize(): boolean {
+                return this._api.LMSInitialize();
+            }
+            onTerminate(): boolean {
+                return getBoolean(this._api.LMSFinish()) ?? false;
+            }
+            onCommit(): boolean {
+                return getBoolean(this._api.LMSCommit("")) ?? false;
+            }
+            onGetLastError(): number {
+                return this._api.LMSGetLastError();
+            }
+            onGetErrorString(): string {
+                return this._api.LMSGetErrorString();
+            }
+            onGetDiagnostic(): string {
                 return this._api.LMSGetDiagnostic();
             }
             getVersion(): ScormApiVersion {
                 return ScormApiVersion.v1p2;
             }
 
+
+
+            protected getExitParameter = () => "cmi.core.exit";
+            protected getCompletedCompletionStatus = () => "passed";
+            protected getSuspendExitStatus = () => "suspend";
+            protected getLogoutExitStatus = () => "logout";
+            protected onCommitBeforeTerminate(): boolean {
+                return this.onCommit();
+            }
+
+            protected getIncompleteCompletionStatus = () => "incomplete";
+            protected getNotAttemptedCompletionStatus = () => "not attempted";
+            protected getCompletionStatusParameter = () => "cmi.core.lesson_status";
+
         }
 
-        class ScormApiWrapper2004 implements IScormApiWrapper {
+        class ScormApiWrapper2004 extends ScormApiWrapperBase {
             private _api: IScormEngine2004;
 
             constructor(api: IScormEngine2004) {
+                super();
                 this._api = api;
             }
 
-            get(name: string): GetValueResult {
-                let val = this.getRaw(name);
-                let errorCode = this.getLastError();
 
-                let isSuccessful = errorCode == 0;
-                let errorString: string | null = null;
-                let errorDiagnostic: string | null = null;
-
-                if (isSuccessful) {
-                    errorString = this.getErrorString();
-                    errorDiagnostic = this.getDiagnostic();
-                }
-
-                return {
-                    value: val,
-                    errorCode: errorCode,
-                    isSuccessful: isSuccessful,
-                    errorString: errorString,
-                    errorDiagnostic: errorDiagnostic
-                };
-            }
-
-            set(name: string, value: string): SetValueResult {
-                let val = this.setRaw(name, value);
-                let errorCode = this.getLastError();
-
-                let isSuccessful = errorCode == 0;
-                let errorString: string | null = null;
-                let errorDiagnostic: string | null = null;
-
-                if (isSuccessful) {
-                    errorString = this.getErrorString();
-                    errorDiagnostic = this.getDiagnostic();
-                }
-
-                return {
-                    errorCode: errorCode,
-                    isSuccessful: isSuccessful,
-                    errorString: errorString,
-                    errorDiagnostic: errorDiagnostic
-                };
-            }
-            getRaw(name: string): string {
+            onGetRaw(name: string): string {
                 return this._api.GetValue(name);
             }
-            setRaw(name: string, value: string): string {
-                return this._api.SetValue(name, value);
+            onSetRaw(name: string, value: string): boolean {
+                return getBoolean(this._api.SetValue(name, value)) ?? false;
             }
-            initialize(): boolean {
+            onInitialize(): boolean {
                 return this._api.Initialize("");
             }
-            terminate(): void {
-                this._api.Terminate("");
+            onTerminate(): boolean {
+                return getBoolean(this._api.Terminate("")) ?? false;
             }
-            commit(): void {
-                this._api.Commit("");
+            onCommit(): boolean {
+                return getBoolean(this._api.Commit("")) ?? false;
             }
-            getLastError(): number {
+            onGetLastError(): number {
                 return this._api.GetLastError();
             }
-            getErrorString(): string {
+            onGetErrorString(): string {
                 return this._api.GetErrorString();
             }
-            getDiagnostic(): string {
+            onGetDiagnostic(): string {
                 return this._api.GetDiagnostic();
             }
             getVersion(): ScormApiVersion {
                 return ScormApiVersion.v2004;
             }
+
+            protected getExitParameter = () => "cmi.exit";
+            protected getCompletedCompletionStatus = () => "completed";
+            protected getSuspendExitStatus = () => "suspend"
+            protected getLogoutExitStatus = () => "normal";
+            protected onCommitBeforeTerminate(): boolean {
+                //not required for 2004 where an implicit commit is applied during the Terminate
+                return true;
+            }
+
+            protected getIncompleteCompletionStatus = () => "incomplete";
+            protected getNotAttemptedCompletionStatus = () => "unknown";
+            protected getCompletionStatusParameter = () => "cmi.completion_status";
         }
 
 
@@ -236,7 +401,51 @@ namespace Sheleski {
             v2004: IScormEngine2004 | null
         };
 
-        function getApi(win: Window): FindApiResult {
+        function discoverApi(version: ScormApiVersion | null): FindApiResult {
+
+            let win = window;
+
+            let findResult: FindApiResult | null = findApiFromWindow(win, version);
+
+            if (!findResult && win.parent && win.parent != win) {
+                findResult = findApiFromWindow(win.parent, version);
+            }
+
+            if (!findResult && win.top && win.top.opener) {
+                findResult = findApiFromWindow(win.top.opener, version);
+            }
+
+            if (!findResult && win.top && win.top.opener && windowIsValidOrigin(win.top.opener) && win.top.opener.document) {
+                findResult = findApiFromWindow(win.top.opener.document, version);
+            }
+
+            return findResult ?? { v1p2: null, v2004: null };
+        }
+
+        function findApiFromWindow(win: Window, version: ScormApiVersion | null): FindApiResult | null {
+
+            let findResult: FindApiResult,
+                findAttemptLimit = 500;
+
+            for (let findAttempts = 0; findAttempts <= findAttemptLimit; ++findAttempts) {
+
+                findResult = getApiFromWindow(win);
+
+                if (version == ScormApiVersion.v1p2 && findResult.v1p2) {
+                    return findResult;
+                }
+                else if (version == ScormApiVersion.v2004 && findResult.v2004) {
+                    return findResult
+                }
+                else if (findResult.v2004 || findResult.v1p2) {
+                    return findResult;
+                }
+            }
+
+            return null;
+        };
+
+        function getApiFromWindow(win: Window): FindApiResult {
 
             let anyWin: any = win;
 
@@ -246,7 +455,16 @@ namespace Sheleski {
             };
         }
 
-        export function initBase(version: ScormApiVersion | null): IScormApiWrapper | null {
+        function initBase(version: ScormApiVersion | null): IScormApiWrapper | null {
+            let api = discoverApi(version);
+
+            if (api.v1p2) {
+                return new ScormApiWrapper1p2(api.v1p2);
+            }
+            else if (api.v2004) {
+                return new ScormApiWrapper2004(api.v2004);
+            }
+
             return null;
         }
 
