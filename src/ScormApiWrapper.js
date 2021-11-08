@@ -78,7 +78,7 @@ var Sheleski;
                         errorDiagnostic: null
                     };
                 }
-                var val = this.getRaw(name);
+                var val = this.apiGet(name);
                 var errorCode = this.getLastError();
                 var isSuccessful = (val !== "" || errorCode == 0);
                 var errorString = null;
@@ -107,7 +107,7 @@ var Sheleski;
                 var errorString = null;
                 var errorDiagnostic = null;
                 var errorCode = 0;
-                var success = this.setRaw(name, value);
+                var success = this.apiSet(name, value);
                 if (success) {
                     if (name == this.completionStatusParameter) {
                         this.completionStatus = value;
@@ -125,24 +125,18 @@ var Sheleski;
                     errorDiagnostic: errorDiagnostic
                 };
             };
-            ScormApiWrapperBase.prototype.getRaw = function (name) {
-                return this.onGetRaw(name);
-            };
-            ScormApiWrapperBase.prototype.setRaw = function (name, value) {
-                return getBoolean(this.onSetRaw(name, value));
-            };
             ScormApiWrapperBase.prototype.initialize = function () {
                 if (this.connectionStatus == ConnectionStatus.connected) {
                     this.onError(Errors.connectionAlreadyActive);
                 }
                 else {
-                    if (this.onInitialize()) {
+                    if (this.apiInitialize()) {
                         this.connectionStatus = ConnectionStatus.connected;
                         if (this.setCompletionStatusOnInitialize) {
                             var completionStatusParameter = this.completionStatusParameter;
-                            var completionStatus = this.getRaw(completionStatusParameter);
+                            var completionStatus = this.apiGet(completionStatusParameter);
                             if (completionStatus == this.notAttemptedCompletionStatus) {
-                                if (this.setRaw(completionStatusParameter, this.incompleteCompletionStatus)) {
+                                if (this.apiSet(completionStatusParameter, this.incompleteCompletionStatus)) {
                                     this.commit();
                                     return true;
                                 }
@@ -163,16 +157,16 @@ var Sheleski;
                 var success = false;
                 if (this.setExitOnTerminate && !this.exitStatus) {
                     if (this.completionStatus !== this.completedCompletionStatus) {
-                        success = this.onSetRaw(this.exitParameter, this.suspendExitStatus);
+                        success = this.apiSet(this.exitParameter, this.suspendExitStatus);
                     }
                     else {
-                        success = this.onSetRaw(this.exitParameter, this.logoutExitStatus);
+                        success = this.apiSet(this.exitParameter, this.logoutExitStatus);
                     }
                 }
                 if (this.commitOnTerminate) {
-                    success = this.onCommitBeforeTerminate();
+                    success = this.apiCommitBeforeTerminate();
                 }
-                success = this.onTerminate();
+                success = this.apiTerminate();
                 if (success) {
                     this.connectionStatus = ConnectionStatus.disconnected;
                 }
@@ -180,18 +174,18 @@ var Sheleski;
             };
             ScormApiWrapperBase.prototype.commit = function () {
                 if (this.connectionStatus == ConnectionStatus.connected) {
-                    return this.onCommit();
+                    return this.apiCommit();
                 }
                 return false;
             };
             ScormApiWrapperBase.prototype.getLastError = function () {
-                return this.onGetLastError();
+                return this.apiGetLastError();
             };
             ScormApiWrapperBase.prototype.getErrorString = function () {
-                return this.onGetErrorString();
+                return this.apiGetErrorString();
             };
             ScormApiWrapperBase.prototype.getDiagnostic = function () {
-                return this.onGetDiagnostic();
+                return this.apiGetDiagnostic();
             };
             return ScormApiWrapperBase;
         }());
@@ -208,39 +202,19 @@ var Sheleski;
                 _this.completionStatusParameter = "cmi.core.lesson_status";
                 _this.notInitializedErrorCode = 301;
                 _this.notInitializedErorrString = "API call was made before the call to LMSInitialize";
+                _this.getVersion = function () { return ScormApiVersion.v1p2; };
+                _this.apiGet = function (name) { return _this._api.LMSGetValue(name); };
+                _this.apiSet = function (name, value) { return getBoolean(_this._api.LMSSetValue(name, value)); };
+                _this.apiInitialize = function () { return _this._api.LMSInitialize(); };
+                _this.apiTerminate = function () { return getBoolean(_this._api.LMSFinish()); };
+                _this.apiCommit = function () { return getBoolean(_this._api.LMSCommit("")); };
+                _this.apiGetLastError = function () { return _this._api.LMSGetLastError(); };
+                _this.apiGetErrorString = function () { return _this._api.LMSGetErrorString(); };
+                _this.apiGetDiagnostic = function () { return _this._api.LMSGetDiagnostic(); };
+                _this.apiCommitBeforeTerminate = function () { return _this.apiCommit(); };
                 _this._api = api;
                 return _this;
             }
-            ScormApiWrapper1p2.prototype.onGetRaw = function (name) {
-                return this._api.LMSGetValue(name);
-            };
-            ScormApiWrapper1p2.prototype.onSetRaw = function (name, value) {
-                return getBoolean(this._api.LMSSetValue(name, value));
-            };
-            ScormApiWrapper1p2.prototype.onInitialize = function () {
-                return this._api.LMSInitialize();
-            };
-            ScormApiWrapper1p2.prototype.onTerminate = function () {
-                return getBoolean(this._api.LMSFinish());
-            };
-            ScormApiWrapper1p2.prototype.onCommit = function () {
-                return getBoolean(this._api.LMSCommit(""));
-            };
-            ScormApiWrapper1p2.prototype.onGetLastError = function () {
-                return this._api.LMSGetLastError();
-            };
-            ScormApiWrapper1p2.prototype.onGetErrorString = function () {
-                return this._api.LMSGetErrorString();
-            };
-            ScormApiWrapper1p2.prototype.onGetDiagnostic = function () {
-                return this._api.LMSGetDiagnostic();
-            };
-            ScormApiWrapper1p2.prototype.getVersion = function () {
-                return ScormApiVersion.v1p2;
-            };
-            ScormApiWrapper1p2.prototype.onCommitBeforeTerminate = function () {
-                return this.onCommit();
-            };
             return ScormApiWrapper1p2;
         }(ScormApiWrapperBase));
         var ScormApiWrapper2004 = /** @class */ (function (_super) {
@@ -256,40 +230,20 @@ var Sheleski;
                 _this.completionStatusParameter = "cmi.completion_status";
                 _this.notInitializedErrorCode = 122;
                 _this.notInitializedErorrString = "Call to GetValue failed because it was made before the call to Initialize.";
+                _this.getVersion = function () { return ScormApiVersion.v2004; };
+                _this.apiGet = function (name) { return _this._api.GetValue(name); };
+                _this.apiSet = function (name, value) { return getBoolean(_this._api.SetValue(name, value)); };
+                _this.apiInitialize = function () { return _this._api.Initialize(""); };
+                _this.apiTerminate = function () { return getBoolean(_this._api.Terminate("")); };
+                _this.apiCommit = function () { return getBoolean(_this._api.Commit("")); };
+                _this.apiGetLastError = function () { return _this._api.GetLastError(); };
+                _this.apiGetErrorString = function () { return _this._api.GetErrorString(); };
+                _this.apiGetDiagnostic = function () { return _this._api.GetDiagnostic(); };
+                //not required for 2004 where an implicit commit is applied during the Terminate
+                _this.apiCommitBeforeTerminate = function () { return true; };
                 _this._api = api;
                 return _this;
             }
-            ScormApiWrapper2004.prototype.onGetRaw = function (name) {
-                return this._api.GetValue(name);
-            };
-            ScormApiWrapper2004.prototype.onSetRaw = function (name, value) {
-                return getBoolean(this._api.SetValue(name, value));
-            };
-            ScormApiWrapper2004.prototype.onInitialize = function () {
-                return this._api.Initialize("");
-            };
-            ScormApiWrapper2004.prototype.onTerminate = function () {
-                return getBoolean(this._api.Terminate(""));
-            };
-            ScormApiWrapper2004.prototype.onCommit = function () {
-                return getBoolean(this._api.Commit(""));
-            };
-            ScormApiWrapper2004.prototype.onGetLastError = function () {
-                return this._api.GetLastError();
-            };
-            ScormApiWrapper2004.prototype.onGetErrorString = function () {
-                return this._api.GetErrorString();
-            };
-            ScormApiWrapper2004.prototype.onGetDiagnostic = function () {
-                return this._api.GetDiagnostic();
-            };
-            ScormApiWrapper2004.prototype.getVersion = function () {
-                return ScormApiVersion.v2004;
-            };
-            ScormApiWrapper2004.prototype.onCommitBeforeTerminate = function () {
-                //not required for 2004 where an implicit commit is applied during the Terminate
-                return true;
-            };
             return ScormApiWrapper2004;
         }(ScormApiWrapperBase));
         function windowIsValidOrigin(win) {

@@ -51,8 +51,6 @@ namespace Sheleski {
             get(name: string): GetValueResult;
             set(name: string, value: string): SetValueResult;
 
-            getRaw(name: string): string;
-            setRaw(name: string, value: string): boolean;
 
             initialize(): boolean;
             terminate(): void;
@@ -127,7 +125,7 @@ namespace Sheleski {
 
                 }
 
-                let val = this.getRaw(name);
+                let val = this.apiGet(name);
                 let errorCode = this.getLastError();
 
                 let isSuccessful = (val !== "" || errorCode == 0);
@@ -163,7 +161,7 @@ namespace Sheleski {
                 let errorDiagnostic: string | null = null;
                 let errorCode = 0;
 
-                let success = this.setRaw(name, value);
+                let success = this.apiSet(name, value);
 
                 if (success) {
                     if (name == this.completionStatusParameter) {
@@ -184,29 +182,23 @@ namespace Sheleski {
                 };
             }
 
-            getRaw(name: string): string {
-                return this.onGetRaw(name);
-            }
-            setRaw(name: string, value: string): boolean {
-                return getBoolean(this.onSetRaw(name, value));
-            }
             initialize(): boolean {
                 if (this.connectionStatus == ConnectionStatus.connected) {
                     this.onError(Errors.connectionAlreadyActive)
                 }
                 else {
 
-                    if (this.onInitialize()) {
+                    if (this.apiInitialize()) {
                         this.connectionStatus = ConnectionStatus.connected;
 
                         if (this.setCompletionStatusOnInitialize) {
 
                             let completionStatusParameter = this.completionStatusParameter;
 
-                            let completionStatus = this.getRaw(completionStatusParameter);
+                            let completionStatus = this.apiGet(completionStatusParameter);
 
                             if (completionStatus == this.notAttemptedCompletionStatus) {
-                                if (this.setRaw(completionStatusParameter, this.incompleteCompletionStatus)) {
+                                if (this.apiSet(completionStatusParameter, this.incompleteCompletionStatus)) {
                                     this.commit();
 
                                     return true;
@@ -232,18 +224,18 @@ namespace Sheleski {
 
                 if (this.setExitOnTerminate && !this.exitStatus) {
                     if (this.completionStatus !== this.completedCompletionStatus) {
-                        success = this.onSetRaw(this.exitParameter, this.suspendExitStatus);
+                        success = this.apiSet(this.exitParameter, this.suspendExitStatus);
                     }
                     else {
-                        success = this.onSetRaw(this.exitParameter, this.logoutExitStatus);
+                        success = this.apiSet(this.exitParameter, this.logoutExitStatus);
                     }
                 }
 
                 if (this.commitOnTerminate) {
-                    success = this.onCommitBeforeTerminate();
+                    success = this.apiCommitBeforeTerminate();
                 }
 
-                success = this.onTerminate();
+                success = this.apiTerminate();
 
                 if (success) {
                     this.connectionStatus = ConnectionStatus.disconnected;
@@ -253,19 +245,19 @@ namespace Sheleski {
             }
             commit(): boolean {
                 if (this.connectionStatus == ConnectionStatus.connected) {
-                    return this.onCommit();
+                    return this.apiCommit();
                 }
 
                 return false;
             }
             getLastError(): number {
-                return this.onGetLastError();
+                return this.apiGetLastError();
             }
             getErrorString(): string {
-                return this.onGetErrorString();
+                return this.apiGetErrorString();
             }
             getDiagnostic(): string {
-                return this.onGetDiagnostic();
+                return this.apiGetDiagnostic();
             }
 
             protected abstract readonly exitParameter: string;
@@ -277,24 +269,25 @@ namespace Sheleski {
             protected abstract readonly completionStatusParameter: string;
 
             protected abstract readonly notInitializedErrorCode: number;
-            protected abstract readonly notInitializedErorrString : string;
+            protected abstract readonly notInitializedErorrString: string;
 
-            protected abstract onGetRaw(name: string): string;
-            protected abstract onSetRaw(name: string, value: string): boolean;
-            protected abstract onGetLastError(): number;
-            protected abstract onGetErrorString(): string;
-            protected abstract onGetDiagnostic(): string;
-            protected abstract onInitialize(): boolean;
-            protected abstract onTerminate(): boolean;
-            protected abstract onCommit(): boolean;
-            protected abstract onCommitBeforeTerminate(): boolean;
+            protected abstract apiGet(name: string): string;
+            protected abstract apiSet(name: string, value: string): boolean;
+            protected abstract apiGetLastError(): number;
+            protected abstract apiGetErrorString(): string;
+            protected abstract apiGetDiagnostic(): string;
+            protected abstract apiInitialize(): boolean;
+            protected abstract apiTerminate(): boolean;
+            protected abstract apiCommit(): boolean;
+            protected abstract apiCommitBeforeTerminate(): boolean;
 
             abstract getVersion(): ScormApiVersion;
 
         }
 
         class ScormApiWrapper1p2 extends ScormApiWrapperBase {
-            
+
+
 
             protected readonly exitParameter = "cmi.core.exit";
             protected readonly completedCompletionStatus = "passed";
@@ -314,42 +307,21 @@ namespace Sheleski {
                 this._api = api;
             }
 
-            onGetRaw(name: string): string {
-                return this._api.LMSGetValue(name);
-            }
-            onSetRaw(name: string, value: string): boolean {
-                return getBoolean(this._api.LMSSetValue(name, value));
-            }
-            onInitialize(): boolean {
-                return this._api.LMSInitialize();
-            }
-            onTerminate(): boolean {
-                return getBoolean(this._api.LMSFinish());
-            }
-            onCommit(): boolean {
-                return getBoolean(this._api.LMSCommit(""));
-            }
-            onGetLastError(): number {
-                return this._api.LMSGetLastError();
-            }
-            onGetErrorString(): string {
-                return this._api.LMSGetErrorString();
-            }
-            onGetDiagnostic(): string {
-                return this._api.LMSGetDiagnostic();
-            }
-            getVersion(): ScormApiVersion {
-                return ScormApiVersion.v1p2;
-            }
+            public getVersion = () => ScormApiVersion.v1p2;
 
-            protected onCommitBeforeTerminate(): boolean {
-                return this.onCommit();
-            }
-
+            protected apiGet = (name: string): string => this._api.LMSGetValue(name);
+            protected apiSet = (name: string, value: string) => getBoolean(this._api.LMSSetValue(name, value));
+            protected apiInitialize = () => this._api.LMSInitialize();
+            protected apiTerminate = () => getBoolean(this._api.LMSFinish());
+            protected apiCommit = () => getBoolean(this._api.LMSCommit(""));
+            protected apiGetLastError = () => this._api.LMSGetLastError();
+            protected apiGetErrorString = () => this._api.LMSGetErrorString();
+            protected apiGetDiagnostic = () => this._api.LMSGetDiagnostic();
+            
+            protected apiCommitBeforeTerminate = () => this.apiCommit();
         }
 
         class ScormApiWrapper2004 extends ScormApiWrapperBase {
-            
 
             protected readonly exitParameter = "cmi.exit";
             protected readonly completedCompletionStatus = "completed";
@@ -369,42 +341,19 @@ namespace Sheleski {
                 this._api = api;
             }
 
+            public getVersion = () => ScormApiVersion.v2004;
 
-            onGetRaw(name: string): string {
-                return this._api.GetValue(name);
-            }
-            onSetRaw(name: string, value: string): boolean {
-                return getBoolean(this._api.SetValue(name, value));
-            }
-            onInitialize(): boolean {
-                return this._api.Initialize("");
-            }
-            onTerminate(): boolean {
-                return getBoolean(this._api.Terminate(""));
-            }
-            onCommit(): boolean {
-                return getBoolean(this._api.Commit(""));
-            }
-            onGetLastError(): number {
-                return this._api.GetLastError();
-            }
-            onGetErrorString(): string {
-                return this._api.GetErrorString();
-            }
-            onGetDiagnostic(): string {
-                return this._api.GetDiagnostic();
-            }
-            getVersion(): ScormApiVersion {
-                return ScormApiVersion.v2004;
-            }
-
-
-            protected onCommitBeforeTerminate(): boolean {
-                //not required for 2004 where an implicit commit is applied during the Terminate
-                return true;
-            }
-
-
+            protected apiGet = (name: string) => this._api.GetValue(name);
+            protected apiSet = (name: string, value: string) => getBoolean(this._api.SetValue(name, value));
+            protected apiInitialize = () => this._api.Initialize("");
+            protected apiTerminate = () => getBoolean(this._api.Terminate(""));
+            protected apiCommit = () => getBoolean(this._api.Commit(""));
+            protected apiGetLastError = () => this._api.GetLastError();
+            protected apiGetErrorString = () => this._api.GetErrorString();
+            protected apiGetDiagnostic = () => this._api.GetDiagnostic();
+            
+            //not required for 2004 where an implicit commit is applied during the Terminate
+            protected apiCommitBeforeTerminate = () => true;
         }
 
 
