@@ -9,7 +9,7 @@ namespace Sheleski {
 
         type emptyString = "";
 
-        interface IScormEngine2004 {
+        export interface IScormEngine2004 {
             Initialize(empty: emptyString): boolean;
             Terminate(empty: emptyString): boolean;
             GetValue(name: string): string;
@@ -20,7 +20,7 @@ namespace Sheleski {
             GetDiagnostic(): string;
         };
 
-        interface IScormEngine1p2 {
+        export interface IScormEngine1p2 {
             LMSInitialize(): boolean;
             LMSFinish(): boolean;
             LMSGetValue(name: string): string;
@@ -34,14 +34,14 @@ namespace Sheleski {
         type GetValueResult = {
             value: string,
             errorCode: number,
-            isSuccessful: boolean,
+            success: boolean,
             errorString: string | null,
             errorDiagnostic: string | null
         };
 
         type SetValueResult = {
             errorCode: number,
-            isSuccessful: boolean,
+            success: boolean,
             errorString: string | null,
             errorDiagnostic: string | null
         };
@@ -61,14 +61,14 @@ namespace Sheleski {
             getErrorString(): string;
             getDiagnostic(): string;
             getVersion(): ScormApiVersion;
-        }
+        };
 
         enum ConnectionStatus {
             connected,
             disconnected
         };
 
-        function getBoolean(value: any): boolean | null {
+        function getBoolean(value: any): boolean {
             var t = typeof value;
             switch (t) {
                 //typeof new String("true") === "object", so handle objects as string via fall-through.
@@ -81,7 +81,6 @@ namespace Sheleski {
                 case "boolean":
                     return value;
                 case "undefined":
-                    return null;
                 default:
                     return false;
             }
@@ -115,6 +114,19 @@ namespace Sheleski {
             }
 
             get(name: string): GetValueResult {
+
+                if (this.connectionStatus == ConnectionStatus.disconnected) {
+
+                    return {
+                        value: "",
+                        success: false,
+                        errorCode: this.notInitializedErrorCode,
+                        errorString: this.notInitializedErorrString,
+                        errorDiagnostic: null
+                    };
+
+                }
+
                 let val = this.getRaw(name);
                 let errorCode = this.getLastError();
 
@@ -139,7 +151,7 @@ namespace Sheleski {
                 return {
                     value: val,
                     errorCode: errorCode,
-                    isSuccessful: isSuccessful,
+                    success: isSuccessful,
                     errorString: errorString,
                     errorDiagnostic: errorDiagnostic
                 };
@@ -165,8 +177,8 @@ namespace Sheleski {
                 }
 
                 return {
+                    success: success,
                     errorCode: errorCode,
-                    isSuccessful: success,
                     errorString: errorString,
                     errorDiagnostic: errorDiagnostic
                 };
@@ -176,7 +188,7 @@ namespace Sheleski {
                 return this.onGetRaw(name);
             }
             setRaw(name: string, value: string): boolean {
-                return getBoolean(this.onSetRaw(name, value)) ?? false;
+                return getBoolean(this.onSetRaw(name, value));
             }
             initialize(): boolean {
                 if (this.connectionStatus == ConnectionStatus.connected) {
@@ -264,6 +276,9 @@ namespace Sheleski {
             protected abstract readonly notAttemptedCompletionStatus: string;
             protected abstract readonly completionStatusParameter: string;
 
+            protected abstract readonly notInitializedErrorCode: number;
+            protected abstract readonly notInitializedErorrString : string;
+
             protected abstract onGetRaw(name: string): string;
             protected abstract onSetRaw(name: string, value: string): boolean;
             protected abstract onGetLastError(): number;
@@ -279,14 +294,18 @@ namespace Sheleski {
         }
 
         class ScormApiWrapper1p2 extends ScormApiWrapperBase {
+            
 
             protected readonly exitParameter = "cmi.core.exit";
             protected readonly completedCompletionStatus = "passed";
             protected readonly suspendExitStatus = "suspend";
             protected readonly logoutExitStatus = "logout";
-            protected readonly incompleteCompletionStatus =  "incomplete";
-            protected readonly notAttemptedCompletionStatus =  "not attempted";
-            protected readonly completionStatusParameter =  "cmi.core.lesson_status";
+            protected readonly incompleteCompletionStatus = "incomplete";
+            protected readonly notAttemptedCompletionStatus = "not attempted";
+            protected readonly completionStatusParameter = "cmi.core.lesson_status";
+
+            protected readonly notInitializedErrorCode: number = 301;
+            protected readonly notInitializedErorrString: string = "API call was made before the call to LMSInitialize";
 
             private _api: IScormEngine1p2;
 
@@ -299,16 +318,16 @@ namespace Sheleski {
                 return this._api.LMSGetValue(name);
             }
             onSetRaw(name: string, value: string): boolean {
-                return getBoolean(this._api.LMSSetValue(name, value)) ?? false;
+                return getBoolean(this._api.LMSSetValue(name, value));
             }
             onInitialize(): boolean {
                 return this._api.LMSInitialize();
             }
             onTerminate(): boolean {
-                return getBoolean(this._api.LMSFinish()) ?? false;
+                return getBoolean(this._api.LMSFinish());
             }
             onCommit(): boolean {
-                return getBoolean(this._api.LMSCommit("")) ?? false;
+                return getBoolean(this._api.LMSCommit(""));
             }
             onGetLastError(): number {
                 return this._api.LMSGetLastError();
@@ -323,10 +342,6 @@ namespace Sheleski {
                 return ScormApiVersion.v1p2;
             }
 
-
-
-            
-
             protected onCommitBeforeTerminate(): boolean {
                 return this.onCommit();
             }
@@ -334,14 +349,18 @@ namespace Sheleski {
         }
 
         class ScormApiWrapper2004 extends ScormApiWrapperBase {
+            
 
             protected readonly exitParameter = "cmi.exit";
-            protected readonly completedCompletionStatus ="completed";
+            protected readonly completedCompletionStatus = "completed";
             protected readonly suspendExitStatus = "suspend"
-            protected readonly logoutExitStatus =  "normal";
-            protected readonly incompleteCompletionStatus =  "incomplete";
+            protected readonly logoutExitStatus = "normal";
+            protected readonly incompleteCompletionStatus = "incomplete";
             protected readonly notAttemptedCompletionStatus = "unknown";
-            protected readonly completionStatusParameter =  "cmi.completion_status";
+            protected readonly completionStatusParameter = "cmi.completion_status";
+            protected readonly notInitializedErrorCode: number = 122;
+            protected readonly notInitializedErorrString: string = "Call to GetValue failed because it was made before the call to Initialize.";
+
 
             private _api: IScormEngine2004;
 
@@ -355,16 +374,16 @@ namespace Sheleski {
                 return this._api.GetValue(name);
             }
             onSetRaw(name: string, value: string): boolean {
-                return getBoolean(this._api.SetValue(name, value)) ?? false;
+                return getBoolean(this._api.SetValue(name, value));
             }
             onInitialize(): boolean {
                 return this._api.Initialize("");
             }
             onTerminate(): boolean {
-                return getBoolean(this._api.Terminate("")) ?? false;
+                return getBoolean(this._api.Terminate(""));
             }
             onCommit(): boolean {
-                return getBoolean(this._api.Commit("")) ?? false;
+                return getBoolean(this._api.Commit(""));
             }
             onGetLastError(): number {
                 return this._api.GetLastError();
@@ -379,13 +398,13 @@ namespace Sheleski {
                 return ScormApiVersion.v2004;
             }
 
-            
+
             protected onCommitBeforeTerminate(): boolean {
                 //not required for 2004 where an implicit commit is applied during the Terminate
                 return true;
             }
 
-            
+
         }
 
 
